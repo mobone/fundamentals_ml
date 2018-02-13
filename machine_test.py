@@ -23,7 +23,7 @@ class machine(multiprocessing.Process):
         while not self.q.empty():
             features = self.q.get()
             self.features = list(features)
-            for self.hold_time in ['_10','_5']:
+            for self.hold_time in ['_20']:
                 df = self.df[self.features+['abnormal_perc_change'+self.hold_time]]
                 target = self.df['abnormal_perc_change'+self.hold_time]
                 total_positives = []
@@ -87,14 +87,13 @@ if __name__ == '__main__':
     conn = sqlite3.connect("data.db")
     df = pd.read_sql('select * from data', conn)
 
-    corr = df.corr()['abnormal_perc_change_5'].sort_values()
+    corr = df.corr()['abnormal_perc_change_20'].sort_values()
 
-    corr = corr[:-4]
+    corr = corr[:-2]
 
-    columns = list(corr.index)+['abnormal_perc_change_5', 'abnormal_perc_change_10']
-    if 'index_perc_change_10' in columns:
-        columns.remove('index_perc_change_10')
-
+    columns = list(corr.index)+['abnormal_perc_change_20']
+    #if 'index_perc_change_10' in columns:
+    #    columns.remove('index_perc_change_10')
 
     df = df[columns]
 
@@ -109,13 +108,13 @@ if __name__ == '__main__':
 
     # get k features
     X = df.ix[:,:-2]
-    y = df['abnormal_perc_change_5']
+    y = df['abnormal_perc_change_20']
 
     k = SelectKBest(f_regression, k=12)
     k = k.fit(X,y)
     k_best_features = list(X.columns[k.get_support()])
     print(k_best_features)
-    
+
     input()
 
     permutations = []
