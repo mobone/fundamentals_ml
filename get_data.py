@@ -40,7 +40,7 @@ class worker(threading.Thread):
             doc_id = self.q.get()
             doc = self.db[doc_id]
             if doc_id[1]!=letter and self.thread_id == 0:
-                print(doc_id)
+                print(datetime.now(), workQueue.qsize(), doc_id)
                 letter = doc_id[1]
             company(doc_id, doc, self.conn, self.hold_time, session)
 
@@ -57,14 +57,27 @@ class company(object):
 
     def create_company(self):
         exclude = ['Sector', 'Industry', 'Index', 'Date', 'Earnings',
-                   '52W Range', 'Volatility', 'Optionable', 'Shortable',
+                   '52W Range', 'Optionable', 'Shortable',
                    'Ticker', '_id', '_rev']
         df = pd.DataFrame(self.doc, index = [self.doc_id]).T
 
         for i in df.iterrows():
             key = i[0]
+            value = i[1].values[0]
             if key in exclude:
                 continue
+
+            if key == 'Volatility' and type(value) is str:
+                value = value.replace('%','')
+                print(value)
+                if value != '-':
+                    df[self.doc_id]['Volatility Week'] = float(value.split(' ')[0])
+                    df[self.doc_id]['Volatility Month'] = float(value.split(' ')[1])
+                else:
+                    df[self.doc_id]['Volatility Week'] = None
+                    df[self.doc_id]['Volatility Month'] = None
+                continue
+
             value = self.convert_to_num(i)
             df[self.doc_id][key] = value
 
@@ -100,6 +113,8 @@ class company(object):
             value = None
         return pd.to_numeric(value)
 
+    def get_distance_to(self, stock_price, stock_limit):
+        return np.std([stock_price, stock_limit])
 
     def get_price_change(self, hold_time, spy_index=False):
 
