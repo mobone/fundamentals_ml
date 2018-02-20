@@ -15,12 +15,15 @@ from rq import Queue
 from RedisQueue import RedisQueue
 
 class machine(multiprocessing.Process):
-    def __init__(self, q, df):
+    def __init__(self, df):
         multiprocessing.Process.__init__(self)
-        self.q = q
+
         self.df = df
 
     def run(self):
+        sleep(10)
+        self.last_mean = .015
+        self.q = RedisQueue('test')
         print('start')
         self.conn = sqlite3.connect("data.db")
         while not self.q.empty():
@@ -31,18 +34,13 @@ class machine(multiprocessing.Process):
                 targets = [self.df['stock_perc_change'+self.hold_time], self.df['abnormal_perc_change'+self.hold_time]]
                 positive_dfs = []
                 negative_dfs = []
-                for i in range(6):
-
+                for i in range(8):
                     a_train, a_test, b_train, b_test = train_test_split(df.ix[:,:-2], df.ix[:,-2:], test_size=.4)
-
-
 
                     self.train(a_train, b_train)
                     test_result, negative_df, positive_df = self.test(a_test, b_test)
                     if test_result:
-
                         positive_dfs.append(positive_df)
-
                         negative_dfs.append(negative_df)
                     else:
                         break
@@ -81,6 +79,12 @@ class machine(multiprocessing.Process):
         if p_result.ix['50%','Actual_abnormal_perc_change_10']<0 or n_result.ix['50%','Actual_abnormal_perc_change_10']>0:
             return
 
+        store_me = False
+        if p_result.ix['mean','Actual_abnormal_perc_change_10']>self.last_mean:
+            self.last_mean = p_result.ix['mean','Actual_abnormal_perc_change_10']
+            store_me = True
+
+
 
 
         p_result.index = p_result.index+'_pos'
@@ -97,9 +101,22 @@ class machine(multiprocessing.Process):
 
         result = p_result.append(n_result)
         result = pd.DataFrame(result).T
-        result['features'] = str(self.features)[1:-1]+' '+self.hold_time[1:]
+        self.model_name = str(self.features)[1:-1]+'__'+self.hold_time[1:]
+        result['features'] = self.model_name
+        if store_me:
 
-        result.to_sql('results', self.conn, index = False, if_exists='append')
+            result.to_sql('results', self.conn, index = False, if_exists='append')
+            self.store_machine()
+
+    def store_machine(self):
+        df = self.df[self.features]
+        target = self.df['abnormal_perc_change'+self.hold_time]
+
+        self.clf = SVR(C=1.0, epsilon=0.2)
+
+        self.clf.fit(df, target)
+        from sklearn.externals import joblib
+        joblib.dump(self.clf, 'machines/'+self.model_name)
 
 
 
@@ -132,7 +149,7 @@ if __name__ == '__main__':
     X = df.ix[:,:-2]
     y = df['abnormal_perc_change_10']
 
-    k = SelectKBest(f_regression, k=12)
+    k = SelectKBest(f_regression, k=15)
     k = k.fit(X,y)
     k_best_features = list(X.columns[k.get_support()])
     if 'index_perc_change_10' in k_best_features:
@@ -141,32 +158,34 @@ if __name__ == '__main__':
 
 
 
-    permutations = []
-
-    #for permute_length in range(3,7):
-    for permute_length in range(3,8):
-        for feature in list(itertools.permutations(k_best_features, r=permute_length)):
-            permutations.append(feature)
-
+    combinations = []
     q = RedisQueue('test')
+    #for permute_length in range(3,7):
+    for permute_length in range(3,10):
+        for feature in list(itertools.combinations(k_best_features, r=permute_length)):
 
-    shuffle(permutations)
+            combinations.append(feature)
 
-    print('starting', len(permutations))
+
+    shuffle(combinations)
+
+    print('starting', len(combinations))
+    input()
     # clear the queue
     while not q.empty():
         q.get()
-    for feature in permutations:
-        
-        q.put(feature)
+    print("empty")
 
 
-    for i in range(8):
-        print('um')
-        x = machine(q, df)
+
+    for i in range(6):
+        x = machine(df)
         print('starting...')
         x.start()
 
+    for feature in combinations:
+        q.put(feature)
+    print('all put')
 
     while not q.empty():
         try:

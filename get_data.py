@@ -69,8 +69,7 @@ class company(object):
 
             if key == 'Volatility' and type(value) is str:
                 value = value.replace('%','')
-                print(value)
-                if value != '-':
+                if '-' not in value:
                     df[self.doc_id]['Volatility Week'] = float(value.split(' ')[0])
                     df[self.doc_id]['Volatility Month'] = float(value.split(' ')[1])
                 else:
@@ -95,7 +94,7 @@ class company(object):
         if self.hold_time:
             df.to_sql('data_'+str(self.hold_time), self.conn, index=False, if_exists='append')
         else:
-            df.to_sql('alerts', self.conn, index=False, if_exists='append')
+            df.to_sql('alert_data', self.conn, index=False, if_exists='append')
 
 
     def convert_to_num(self, row):
