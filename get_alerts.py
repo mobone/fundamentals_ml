@@ -75,9 +75,25 @@ def get_open_close_dates(today):
     return (start_date, end_date)
 
 def get_previous_alerts(model_name):
-    df = pd.read_sql('select * from "%s" where `Close Price` == null', conn)
-    df = df.ix[:.['index', 'Ticker']]
+    df = pd.read_sql('select * from "%s" where `Close Price` is null' % model_name, conn)
+    df = df.ix[:,['Ticker', 'End Date']].reset_index(drop=True)
+
     return df
+
+def update_close_date(prev_alert, model_name):
+
+    close_date = datetime.strptime(prev_alert['End Date'].values[0], '%m-%d-%Y')
+
+    close_date = close_date + timedelta(days=1)
+    while close_date.strftime('%y%m%d') == NYSE_holidays()[0].strftime('%y%m%d') or close_date.weekday()>=5:
+        close_date = close_date + timedelta(days=1)
+    close_date = close_date.strftime('%m-%d-%Y')
+
+    ticker = prev_alert['Ticker'].values[0]
+    c = conn.cursor()
+    c.execute('update "%s" set `End Date`=="%s" where Ticker=="%s" and `Close Price` is null' % (model_name, close_date, ticker))
+    conn.commit()
+
 
 today = datetime.now()
 if today.strftime('%y%m%d') == NYSE_holidays()[0].strftime('%y%m%d'):
@@ -111,8 +127,11 @@ for machine in machines:
     alerts['Current Price'] = None
     alerts['Close Price'] = None
     alerts['Start Date'], alerts['End Date'] = get_open_close_dates(today)
-    print(alerts)
-    df = get_previous_alerts(machine['name'])
-    print(df)
 
-    #alerts.to_sql(machine['name'], conn, if_exists='append')
+    prev_alerts = get_previous_alerts(machine['name'])
+    for ticker in list(alerts['Ticker']):
+        if ticker in list(prev_alerts['Ticker']):
+            update_close_date(prev_alerts[prev_alerts['Ticker']==ticker], machine['name'])
+            alerts = alerts[alerts['Ticker']!=ticker]
+
+    alerts.to_sql(machine['name'], conn, if_exists='append', index=False)
