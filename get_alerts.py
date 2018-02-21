@@ -74,6 +74,10 @@ def get_open_close_dates(today):
 
     return (start_date, end_date)
 
+def get_previous_alerts(model_name):
+    df = pd.read_sql('select * from "%s" where `Close Price` == null', conn)
+    df = df.ix[:.['index', 'Ticker']]
+    return df
 
 today = datetime.now()
 if today.strftime('%y%m%d') == NYSE_holidays()[0].strftime('%y%m%d'):
@@ -108,4 +112,7 @@ for machine in machines:
     alerts['Close Price'] = None
     alerts['Start Date'], alerts['End Date'] = get_open_close_dates(today)
     print(alerts)
-    alerts.to_sql(machine['name'], conn, if_exists='append')
+    df = get_previous_alerts(machine['name'])
+    print(df)
+
+    #alerts.to_sql(machine['name'], conn, if_exists='append')
