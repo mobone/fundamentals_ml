@@ -32,15 +32,16 @@ def get_data_from_couchdb(date):
     couchserver = couchdb.Server('http://mobone:C00kie32!@68.63.209.203:5984/')
     db = couchserver['finviz_data']
     print('connected')
-
-    df = pd.read_sql('select * from alert_data where Date=="%s"' % date, conn)
+    try:
+        df = pd.read_sql('select * from alert_data where Date=="%s"' % date, conn)
+    except:
+        df = pd.DataFrame()
 
     if df.empty:
         for item in db.view('date/date-view', key=date):
 
             marketcap = convert_to_num(item.value['Market Cap'])
             if marketcap<2000000000:
-                print(item.id)
                 company(item.id, item.value, conn)
         df = pd.read_sql('select * from alert_data where Date=="%s"' % date, conn)
         return df
@@ -75,7 +76,7 @@ def get_open_close_dates(today):
     return (start_date, end_date)
 
 def get_previous_alerts(model_name):
-    df = pd.read_sql('select * from "%s" where `Close Price` is null' % model_name, conn)
+    df = pd.read_sql('select Ticker, `End Date` from "%s" where `Close Price` is null' % model_name, conn)
     df = df.ix[:,['Ticker', 'End Date']].reset_index(drop=True)
 
     return df
@@ -90,6 +91,7 @@ def update_close_date(prev_alert, model_name):
     close_date = close_date.strftime('%m-%d-%Y')
 
     ticker = prev_alert['Ticker'].values[0]
+    print('updating ', ticker)
     c = conn.cursor()
     c.execute('update "%s" set `End Date`=="%s" where Ticker=="%s" and `Close Price` is null' % (model_name, close_date, ticker))
     conn.commit()
@@ -98,8 +100,9 @@ def update_close_date(prev_alert, model_name):
 today = datetime.now()
 if today.strftime('%y%m%d') == NYSE_holidays()[0].strftime('%y%m%d'):
     exit()
+#today = today - timedelta(days=1)
 df = get_data_from_couchdb(today.strftime('%m-%d-%Y'))
-print(df)
+
 
 machines = get_machines()
 for machine in machines:
@@ -114,11 +117,13 @@ for machine in machines:
 
     pos_alerts = this_df[this_df['Predicted']>machine['pos_cutoff']]
     pos_alerts['Alert Type'] = 'positive'
+
     if len(pos_alerts)/len(this_df)>.9:
         continue
 
     neg_alerts = this_df[this_df['Predicted']<machine['neg_cutoff']]
     neg_alerts['Alert Type'] = 'negative'
+
     if len(neg_alerts)/len(this_df)>.9:
         continue
     alerts = pd.concat([pos_alerts, neg_alerts])
@@ -128,10 +133,15 @@ for machine in machines:
     alerts['Close Price'] = None
     alerts['Start Date'], alerts['End Date'] = get_open_close_dates(today)
 
-    prev_alerts = get_previous_alerts(machine['name'])
-    for ticker in list(alerts['Ticker']):
-        if ticker in list(prev_alerts['Ticker']):
-            update_close_date(prev_alerts[prev_alerts['Ticker']==ticker], machine['name'])
-            alerts = alerts[alerts['Ticker']!=ticker]
+    try:
+        prev_alerts = get_previous_alerts(machine['name'])
+        for ticker in list(alerts['Ticker']):
+            if ticker in list(prev_alerts['Ticker']):
+                update_close_date(prev_alerts[prev_alerts['Ticker']==ticker], machine['name'])
 
+                alerts = alerts[alerts['Ticker']!=ticker]
+    except Exception as e:
+        print(e)
+
+    print(alerts)
     alerts.to_sql(machine['name'], conn, if_exists='append', index=False)
